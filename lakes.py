@@ -3,6 +3,7 @@ import pylab
 import itertools
 import math
 from matplotlib import pyplot as plt
+import timeit
 
 class PolygonsTouching(Exception):
 
@@ -380,6 +381,56 @@ def readLakes(filename):
         lakes[lake_id] = np.array([list(pts) for pts in lakes[lake_id]])
     return lakes
 
+def rectToQuad(rect):
+    return np.array([[rect[0],rect[1]], [rect[2],rect[1]], [rect[2], rect[3]], [rect[0],rect[3]], [rect[0],rect[1]]])
+
+def samplingLakes(node, region):
+    nodePolygon = rectToQuad(node.rect)
+    lakeSet = set()
+    if pair_overlapping(nodePolygon,region):
+        if node.type == Node.LEAF:
+            try:
+                return set([node.lakes[0]])
+            except IndexError:
+                return set()
+        else:
+            lakeSet = lakeSet.union(samplingLakes(node.children[0],region))
+            lakeSet = lakeSet.union(samplingLakes(node.children[1],region))
+            lakeSet = lakeSet.union(samplingLakes(node.children[2],region))
+            lakeSet = lakeSet.union(samplingLakes(node.children[3],region))
+            return lakeSet
+    else:
+        return set()
+
+def queryLakes(node,region):
+    lakes = samplingLakes(node,region)
+    output = set()
+    for lakeid in lakes:
+        if pair_overlapping(lakesDict[lakeid],region):
+            output.add(lakeid)
+    return output
+
+def bruteForce(region):
+    output = set()
+    for lakeid in lakesDict:
+        try :
+            if pair_overlapping(lakesDict[lakeid],region):
+                output.add(lakeid)
+        except :
+            pass
+    return output
+
+def wrapper(func, *args, **kwargs):
+    def wrapped():
+        return func(*args, **kwargs)
+    return wrapped
+
+def timeSearch(root,region,times=100):
+    wrapped = wrapper(queryLakes, root, region)
+    print "time for Quad-Tree search : ", timeit.timeit(wrapped, number=times)
+    wrapped = wrapper(bruteForce, region)
+    print "time for Brute force search : ", timeit.timeit(wrapped, number=times)
+    return None
 
 if __name__ == "__main__":
     filename = "./MN_LAKES_400.txt"
@@ -395,8 +446,14 @@ if __name__ == "__main__":
     fig = plt.figure()
     ax = fig.add_subplot(1,1,1)
     ax.axis((values["min-x"], values["max-x"], values["min-y"], values["max-y"]))
-    fig.suptitle('Lakes in Quad-Tree', fontsize=18)
+    fig.suptitle('Quad-Tree Example', fontsize=18)
     countLeaf=0
 
     root = Node(None, lakesDict.keys(), rect)    
-    plt.show()
+    #plt.show()
+    region = rectToQuad([200000,200000,400000,400000])
+    lakes = queryLakes(root,region)
+    print "QuadTree search: ", lakes
+    lakes1 = bruteForce(region)
+    print "Brute force search ", lakes1
+    timeSearch(root,region)

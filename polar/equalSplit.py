@@ -237,6 +237,7 @@ def collection_overlapping(polygons, digits=None):
         return collection_overlapping_parallel(polygons, digits)
 
 
+
 class Node():
     ROOT = 0
     BRANCH = 1
@@ -284,32 +285,35 @@ class Node():
 
     def __createQuadrants__(self):
         quadrants = dict()
+        X = math.sqrt((self.rect[2]**2+ self.rect[0]**2) / 2)
+        Q = (self.rect[3] + self.rect[1]) / 2
+        
         quadrants[0] = np.array([[self.rect[0], self.rect[1]], 
-                                [(self.rect[2] + self.rect[0]) / 2,self.rect[1]],
-                                [(self.rect[2] + self.rect[0]) / 2, (self.rect[3] + self.rect[1]) / 2],
-                                [self.rect[0],(self.rect[3] + self.rect[1]) / 2],
+                                [ X, self.rect[1]],
+                                [ X, Q],
+                                [self.rect[0], Q],
                                 [self.rect[0], self.rect[1]]])
 
 
-        quadrants[1] = np.array([[(self.rect[2] + self.rect[0]) / 2, self.rect[1]], 
+        quadrants[1] = np.array([[ X, self.rect[1]], 
                                   [self.rect[2],self.rect[1]],    
-                                 [self.rect[2], (self.rect[3] + self.rect[1]) / 2],
-                                 [(self.rect[2] + self.rect[0]) / 2,(self.rect[3] + self.rect[1]) / 2],
-                                 [(self.rect[2] + self.rect[0]) / 2, self.rect[1]]])
+                                 [self.rect[2], Q],
+                                 [ X , Q],
+                                 [ X, self.rect[1]]])
 
 
-        quadrants[2] = np.array([[(self.rect[2] + self.rect[0]) / 2, (self.rect[3] + self.rect[1]) / 2], 
-                                [self.rect[2],(self.rect[3] + self.rect[1]) / 2],
+        quadrants[2] = np.array([[ X, Q], 
+                                [self.rect[2], Q],
                                 [self.rect[2], self.rect[3]],
-                                [(self.rect[2] + self.rect[0]) / 2,self.rect[3]],
-                                [(self.rect[2] + self.rect[0]) / 2, (self.rect[3] + self.rect[1]) / 2]])
+                                [ X, self.rect[3]],
+                                [ X, Q]])
 
 
-        quadrants[3] = np.array([[self.rect[0], (self.rect[3] + self.rect[1]) / 2], 
-                                [(self.rect[2] + self.rect[0]) / 2, (self.rect[3] + self.rect[1]) / 2],
-                                [(self.rect[2] + self.rect[0]) / 2, self.rect[3]],
+        quadrants[3] = np.array([[self.rect[0], Q], 
+                                [ X, Q],
+                                [ X, self.rect[3]],
                                 [self.rect[0],self.rect[3]],
-                                [self.rect[0], (self.rect[3] + self.rect[1]) / 2]])
+                                [self.rect[0], Q]])
         return quadrants
 
     def quardToRect(self, quadrant):
@@ -383,7 +387,7 @@ def readLakes(filename):
         lake_id = int(i.split("  ")[0])
         data = [int(i) for i in i.split("  ")[1].split(" ")]
         lakes[lake_id] = zip(data[::2], data[1::2])
-        lakes[lake_id] = np.array([list(pts) for pts in lakes[lake_id]])
+        lakes[lake_id] = np.array([list(cartesianToPolar(pts)) for pts in lakes[lake_id]])
     return lakes
 
 def rectToQuad(rect):
@@ -407,15 +411,18 @@ def samplingLakes(node, region):
     else:
         return set()
 
-def queryLakes(node,region):
+def queryLakes(node,region,regionC):
     lakes = samplingLakes(node,region)
     output = set()
     for lakeid in lakes:
-        if pair_overlapping(lakesDict[lakeid],region):
-            output.add(lakeid)
+        try :
+            if pair_overlapping(lakesDict[lakeid],region) :
+                output.add(lakeid)
+        except :
+            pass
     return output
 
-def bruteForce(region):
+def bruteForce(region, regionC):
     output = set()
     for lakeid in lakesDict:
         try :
@@ -423,6 +430,7 @@ def bruteForce(region):
                 output.add(lakeid)
         except :
             pass
+    #output = finalSearch(output,regionC)
     return output
 
 def wrapper(func, *args, **kwargs):
@@ -430,20 +438,67 @@ def wrapper(func, *args, **kwargs):
         return func(*args, **kwargs)
     return wrapped
 
-def timeSearch(root,region,times=100):
-    wrapped = wrapper(queryLakes, root, region)
+def timeSearch(root,region, regionC, times=100):
+    wrapped = wrapper(queryLakes, root, region, regionC)
     print "time for Quad-Tree search : ", timeit.timeit(wrapped, number=times)
-    wrapped = wrapper(bruteForce, region)
+    wrapped = wrapper(bruteForce, region, regionC)
     print "time for Brute force search : ", timeit.timeit(wrapped, number=times)
     return None
 
+def cartesianToPolar(pts) :
+    r = math.sqrt(pts[0]**2+pts[1]**2)
+    try :
+        theta = math.atan(pts[1]*1.0/pts[0])
+    except :
+        print "hi"
+        theta = math.pi/2
+    return (r,theta)
+
+def cartesianToPolarSearch(rect):
+    minR = math.sqrt(rect[0]**2+rect[1]**2)
+    maxR = math.sqrt(rect[2]**2+rect[3]**2)
+    minTheta = math.atan(rect[1]*1.0/rect[2])
+    maxTheta = math.atan(rect[3]*1.0/rect[0])
+    return [minR, minTheta, maxR, maxTheta]
+
+def readLakesC(filename):
+    lines = [line.strip() for line in open(filename)]
+    lakes = dict()
+    for i in lines:
+        lake_id = int(i.split("  ")[0])
+        data = [int(i) for i in i.split("  ")[1].split(" ")]
+        lakes[lake_id] = zip(data[::2], data[1::2])
+        lakes[lake_id] = np.array([list(pts) for pts in lakes[lake_id]])
+    return lakes
+
+def finalSearch(lakes, region):
+    result = []
+    for lake in lakes:
+        try :
+            if pair_overlapping(lakesDictC[lake],region):
+                result.append(lake)
+        except :
+            print lake
+            pass
+    return result
+
 if __name__ == "__main__":
-    filename = "../MN_LAKES_400.txt"
+    filename = "./MN_LAKES_400.txt"
     global ax,fig
-    global lakesDict, countLeaf
+    global lakesDict, countLeaf, lakesDictC
 
     lakesDict = dict()
     lakesDict = readLakes(filename)
+    lakesDictC = dict()
+    lakesDictC = readLakesC(filename)
+
+    for lakes in [11354, 2604, 2524, 2902, 11234, 7480, 7798]:
+        try :
+            del(lakesDict[lakes])
+            del(lakesDictC[lakes])
+        except :
+            pass
+        
     values = lakesBoundingRectangle(lakesDict)
     rect = [values["min-x"], values["min-y"], values["max-x"], values["max-y"]]
 
@@ -456,9 +511,11 @@ if __name__ == "__main__":
 
     root = Node(None, lakesDict.keys(), rect)    
     #plt.show()
-    region = rectToQuad([200000,200000,400000,400000])
-    lakes = queryLakes(root,region)
+    minPt = [200000, 200000]
+    maxPt = [400000, 400000]
+    region = rectToQuad(cartesianToPolarSearch([minPt[0],minPt[1],maxPt[0],maxPt[1]]))
+    lakes = queryLakes(root, region, rectToQuad([minPt[0],minPt[1],maxPt[0],maxPt[1]]))
     print "QuadTree search: ", lakes
-    lakes1 = bruteForce(region)
+    lakes1 = bruteForce(region, rectToQuad([minPt[0],minPt[1],maxPt[0],maxPt[1]]))
     print "Brute force search ", lakes1
-    #timeSearch(root,region)
+    timeSearch(root, region, rectToQuad([minPt[0],minPt[1],maxPt[0],maxPt[1]]))
